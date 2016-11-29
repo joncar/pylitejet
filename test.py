@@ -2,6 +2,7 @@
 import sys
 import logging
 import argparse
+import serial
 from pylitejet import LiteJet
 
 def cmd_none(args):
@@ -164,6 +165,8 @@ parser_monitor.set_defaults(func=cmd_monitor)
 args = parser.parse_args()
 
 logging.basicConfig(level=args.verbose)
+
+serial.protocol_handler_packages.append('test_handlers')
 
 lj = LiteJet(args.path)
 
