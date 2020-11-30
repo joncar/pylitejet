@@ -16,11 +16,17 @@ class LiteJetThread(threading.Thread):
    def run(self):
       while True:
          line = self._readline()
+         _LOGGER.debug('Read "%s"', line)
          if len(line)==4 and (line[0]=='P' or line[0]=='R'):
             self._notify_event(line)
             continue
          if len(line)==4 and (line[0]=='F' or line[0]=='N'):
             self._notify_event(line)
+            continue
+         if len(line)==7 and line[0]=='^' and line[1]=='K':
+            _LOGGER.debug("Dim event: '"+line[2:5]+"' '"+line[5:7]+"'")
+            event_name = 'F' if line[5:7] == '00' else 'N'
+            self._notify_event(event_name+line[2:5])
             continue
          self._lastline = line
          self._recv_event.set()
@@ -32,6 +38,7 @@ class LiteJetThread(threading.Thread):
          if (byte[0] == 0x0d):
             break
          output += byte.decode('utf-8')
+         _LOGGER.debug('ReadLine "%s"', output)
       return output
 
    def get_response(self):
@@ -56,16 +63,18 @@ class LiteJet:
       self._command_lock = threading.Lock()
 
    def _send(self, command):
+      _LOGGER.info('WantToSend "%s"', command)
       with self._command_lock:
          _LOGGER.info('Send "%s"', command)
          self._serial.write(command.encode('utf-8'))
 
    def _sendrecv(self, command):
+      _LOGGER.info('WantToSendRecv "%s"', command)
       with self._command_lock:
-         _LOGGER.info('Send "%s"', command)
+         _LOGGER.info('SendRecv(S) "%s"', command)
          self._serial.write(command.encode('utf-8'))
          result = self._thread.get_response()
-         _LOGGER.info('Recv "%s"', result)
+         _LOGGER.info('SendRecv(R) "%s"', result)
          return result
 
    def _add_event(self, event_name, handler):
