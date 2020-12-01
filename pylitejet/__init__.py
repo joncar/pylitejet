@@ -49,11 +49,26 @@ class LiteJetThread(threading.Thread):
 class LiteJet:
    FIRST_LOAD = 1
    LAST_LOAD = 40
+   FIRST_LOAD_RELAY = 1
+   LAST_LOAD_RELAY = 24
+   FIRST_LOAD_FAN = 25
+   LAST_LOAD_FAN = 28
+   FIRST_LOAD_LVRB = 29
+   LAST_LOAD_LVRB = 40
    FIRST_SCENE = 1
    LAST_SCENE = 41
    FIRST_SWITCH = 1
    LAST_BUTTON_SWITCH = 96
    LAST_SWITCH = 138
+   RELAY_RATE_SECONDS = [0, 1, 2, 3, 4, 5, 6, 7,
+                         9, 11, 13, 16, 19, 23, 28, 34,
+                         41, 49, 60, 75, 90, 110, 140, 175,
+                         210, 250, 300, 380, 450, 550, 675, 800]
+   FAN_RATE_SECONDS = [0]
+   LVRB_RATE_SECONDS = [0, 0.25, 0.50, 0.75, 1.00, 1.50, 2.00, 2.50,
+                        3, 4, 5, 6, 7, 8, 10, 12,
+                        14, 16, 18, 20, 25, 30, 45, 60,
+                        90, 120, 300, 600, 900, 1200, 1800, 2700]
 
    def __init__(self, url):
       self._serial = serial.serial_for_url(url, baudrate=19200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
@@ -102,6 +117,12 @@ class LiteJet:
             output_number += 1
       return output
  
+   def _seconds2rate(self, seconds, table):
+      for candidate_rate, candidate_seconds in enumerate(table):
+         if seconds <= candidate_seconds:
+            return candidate_rate
+      return len(table)-1
+
    def on_load_activated(self, index, handler):
       self._add_event('N{0:03d}'.format(index), handler)
 
@@ -126,7 +147,14 @@ class LiteJet:
    def deactivate_scene(self, index):
       self._send('^D{0:03d}'.format(index))
 
-   def activate_load_at(self, index, level, rate):
+   def activate_load_at(self, index, level, rate_seconds):
+      if index >= LiteJet.FIRST_LOAD_RELAY and index <= LiteJet.LAST_LOAD_RELAY:
+         table = LiteJet.RELAY_RATE_SECONDS
+      elif index >= LiteJet.FIRST_LOAD_LVRB and index <= LiteJet.LAST_LOAD_LVRB:
+         table = LiteJet.LVRB_RATE_SECONDS
+      else:
+         table = LiteJet.FAN_RATE_SECONDS
+      rate = self._seconds2rate(rate_seconds, table)
       self._send('^E{0:03d}{1:02d}{2:02d}'.format(index, level, rate))
 
    def get_load_level(self, index):
