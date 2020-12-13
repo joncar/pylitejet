@@ -4,34 +4,47 @@ import threading
 
 _LOGGER = logging.getLogger(__name__)
 
-class LJTestSerial(SerialBase):
+class Serial(SerialBase):
     def open(self):
         self._read_buffer = bytes()
         self._read_ready = threading.Event()
         self._read_ready.clear()
         self._load_levels = {}
         self._switch_pressed = {}
+        self.is_open = True
 
     def close(self):
-        pass
+        self.is_open = False
 
-    def fromURL(self, url):
-        _LOGGER.debug('url is %s', url)
+    def from_url(self, url):
+        _LOGGER.error('url is %s', url)
+
+    @property
+    def in_waiting(self):
+        return len(self._read_buffer)
+
+    @property
+    def out_waiting(self):
+        return 0
+
+    def cancel_read(self):
+        self._read_buffer = bytes()
+        self._read_ready.set()
 
     def read(self, size=1):
-        _LOGGER.debug('read %d bytes', size)
-        assert size == 1
         self._read_ready.wait()
 
         next_bytes = self._read_buffer[0:size]
         self._read_buffer = self._read_buffer[size:]
         if len(self._read_buffer) == 0:
             self._read_ready.clear()
-        _LOGGER.debug('read satisfied with %s', next_bytes)
         return next_bytes
 
+    def _reconfigure_port(self):
+        pass
+
     def _set_load(self, number, level):
-        self._load_level[number] = level
+        self._load_levels[number] = level
         self._respond('^K{0:03d}{1:02d}'.format(number, level))
 
     def _set_switch(self, number, pressed):
@@ -46,7 +59,6 @@ class LJTestSerial(SerialBase):
 
     def write(self, data):
         str = data.decode('utf-8')
-        _LOGGER.debug('write %s', str)
         assert str[0] == '^'
         command = str[1]
         if command != 'G' and command != 'H':
@@ -82,9 +94,6 @@ class LJTestSerial(SerialBase):
         return len(data)
 
     def _respond(self, str):
-        _LOGGER.debug('response: %s', str)
         self._read_buffer = str.encode('utf-8')
         self._read_ready.set()
 
-class Serial(LJTestSerial, io.RawIOBase):
-    pass

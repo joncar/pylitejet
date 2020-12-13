@@ -111,6 +111,7 @@ def cmd_monitor(args):
 # Main
 
 parser = argparse.ArgumentParser('Control a LiteJet lighting system.')
+parser.set_defaults(func=None)
 parser.add_argument('--path', required=True)
 parser.add_argument('-v', '--verbose',
                     help='Show debug logging, including data sent and received via serial port.',
@@ -172,3 +173,5 @@ lj = LiteJet(args.path)
 
 if args.func is not None:
    args.func(args)
+
+lj.close()

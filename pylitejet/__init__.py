@@ -1,45 +1,41 @@
 import logging
 import serial
+import serial.threaded
 import threading
 
 _LOGGER = logging.getLogger(__name__)
 
-class LiteJetThread(threading.Thread):
+class LiteJetReader(serial.threaded.LineReader):
+   TERMINATOR = b'\r'
 
-   def __init__(self, serial, notify_event):
-      threading.Thread.__init__(self, name='LiteJetThread', daemon=True)
-      self._serial = serial
-      self._lastline = None
+   def __init__(self):
+      super(LiteJetReader, self).__init__()
       self._recv_event = threading.Event()
-      self._notify_event = notify_event
 
-   def run(self):
-      while True:
-         line = self._readline()
-         _LOGGER.debug('Read "%s"', line)
-         if len(line)==4 and (line[0]=='P' or line[0]=='R'):
-            self._notify_event(line)
-            continue
-         if len(line)==4 and (line[0]=='F' or line[0]=='N'):
-            self._notify_event(line)
-            continue
-         if len(line)==7 and line[0]=='^' and line[1]=='K':
-            _LOGGER.debug("Dim event: '"+line[2:5]+"' '"+line[5:7]+"'")
-            event_name = 'F' if line[5:7] == '00' else 'N'
-            self._notify_event(event_name+line[2:5])
-            continue
-         self._lastline = line
-         self._recv_event.set()
+   def notify_event(self, event):
+      pass
 
-   def _readline(self):
-      output = ''
-      while True:
-         byte = self._serial.read(size=1)
-         if (byte[0] == 0x0d):
-            break
-         output += byte.decode('utf-8')
-         _LOGGER.debug('ReadLine "%s"', output)
-      return output
+   def connection_made(self, transport):
+      super(LiteJetReader, self).connection_made(transport)
+
+   def connection_lost(self, exc):
+      pass
+
+   def handle_line(self, line):
+      _LOGGER.debug('Read "%s"', line)
+      if len(line)==4 and (line[0]=='P' or line[0]=='R'):
+         self.notify_event(line)
+         return
+      if len(line)==4 and (line[0]=='F' or line[0]=='N'):
+         self.notify_event(line)
+         return
+      if len(line)==7 and line[0]=='^' and line[1]=='K':
+         _LOGGER.debug("Dim event: '"+line[2:5]+"' '"+line[5:7]+"'")
+         event_name = 'F' if line[5:7] == '00' else 'N'
+         self.notify_event(event_name+line[2:5])
+         return
+      self._lastline = line
+      self._recv_event.set()
 
    def get_response(self):
       self._recv_event.wait()
@@ -71,24 +67,32 @@ class LiteJet:
                         90, 120, 300, 600, 900, 1200, 1800, 2700]
 
    def __init__(self, url):
-      self._serial = serial.serial_for_url(url, baudrate=19200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
+      self._serial = serial.serial_for_url(url,
+         baudrate=19200,
+         parity=serial.PARITY_NONE,
+         stopbits=serial.STOPBITS_ONE)
       self._events = {}
-      self._thread = LiteJetThread(self._serial, self._notify_event)
-      self._thread.start()
       self._command_lock = threading.Lock()
+      self._thread = serial.threaded.ReaderThread(self._serial, LiteJetReader)
+      self._thread.start()
+      transport, self._protocol = self._thread.connect()
+      self._protocol.notify_event = self._notify_event
+
+   def close(self):
+      self._thread.close()
 
    def _send(self, command):
       _LOGGER.info('WantToSend "%s"', command)
       with self._command_lock:
          _LOGGER.info('Send "%s"', command)
-         self._serial.write(command.encode('utf-8'))
+         self._protocol.write_line(command)
 
    def _sendrecv(self, command):
       _LOGGER.info('WantToSendRecv "%s"', command)
       with self._command_lock:
          _LOGGER.info('SendRecv(S) "%s"', command)
-         self._serial.write(command.encode('utf-8'))
-         result = self._thread.get_response()
+         self._protocol.write_line(command)
+         result = self._protocol.get_response()
          _LOGGER.info('SendRecv(R) "%s"', result)
          return result
 
