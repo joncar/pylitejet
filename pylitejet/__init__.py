@@ -171,6 +171,10 @@ class LiteJet:
             for handler in event_list:
                 handler()
 
+    def unsubscribe(self, handler):
+        for event_name, event_list in self._events.items():
+            event_list[:] = [x for x in event_list if x != handler]
+
     def _hex2bits(self, response, input_first, input_last, output_first):
         output = {}
         output_number = output_first
