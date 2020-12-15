@@ -45,17 +45,17 @@ class Serial(SerialBase):
 
     def _set_load(self, number, level):
         self._load_levels[number] = level
-        self._respond('^K{0:03d}{1:02d}'.format(number, level))
+        self._respond('^K{0:03d}{1:02d}\r'.format(number, level))
 
     def _set_switch(self, number, pressed):
-        if self._switch_pressed[number] == pressed:
+        if self._switch_pressed.get(number, False) == pressed:
             return
         self._switch_pressed[number] = pressed
         if pressed:
             event = 'P'
         else:
             event = 'R'
-        self._respond('{0}{1:03d}'.format(event, number))
+        self._respond('{0}{1:03d}\r'.format(event, number))
 
     def write(self, data):
         str = data.decode('utf-8')
