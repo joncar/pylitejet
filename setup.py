@@ -3,12 +3,12 @@ from setuptools import setup
 setup(
     name="pylitejet",
     packages=["pylitejet"],
-    version="0.2.1",
+    version="0.3.0",
     description="A library for controlling a LiteJet lighting system.",
     author="Jon Caruana",
     author_email="jon@joncaruana.com",
     url="https://github.com/joncar/pylitejet",
-    download_url="https://github.com/joncar/pylitejet/tarball/0.2.1",
+    download_url="https://github.com/joncar/pylitejet/tarball/0.3.0",
     keywords=["litejet"],
     classifiers=[
         "Development Status :: 3 - Alpha",
