@@ -63,7 +63,7 @@ class Serial(SerialBase):
         assert str[0] == "^"
         command = str[1]
         if command != "G" and command != "H":
-            number = int(str[3:5])
+            number = int(str[2:5])
         if command == "A":
             self._set_load(number, 99)
         elif command == "B":
@@ -71,8 +71,8 @@ class Serial(SerialBase):
         elif command == "C" or command == "D":
             _LOGGER.warning("Scenes not supported")
         elif command == "E":
-            level = int(str[6:8])
-            rate = int(str[8:10])
+            level = int(str[5:7])
+            rate = int(str[7:9])
             self._set_load(number, level)
         elif command == "F":
             self._respond("{0:02d}\r".format(self._load_levels.get(number, 0)))
