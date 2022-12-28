@@ -59,43 +59,65 @@ class Serial(SerialBase):
         self._respond("{0}{1:03d}\r".format(event, number))
 
     def write(self, data):
+        _LOGGER.info(f"  to MCP: {data}")
         str = data.decode("utf-8")
+
+        # Skip until a command start marker
+        start_index = 0
+        while start_index < len(str) and str[start_index] != '^':
+            start_index += 1
+        if start_index != 0:
+            _LOGGER.info(f"Skipped {start_index} bytes")
+            return start_index
+
         assert str[0] == "^"
         command = str[1]
         if command != "G" and command != "H":
             number = int(str[2:5])
         if command == "A":
             self._set_load(number, 99)
+            command_length = 5
         elif command == "B":
             self._set_load(number, 0)
+            command_length = 5
         elif command == "C" or command == "D":
             _LOGGER.warning("Scenes not supported")
         elif command == "E":
             level = int(str[5:7])
             rate = int(str[7:9])
             self._set_load(number, level)
+            command_length = 9
         elif command == "F":
             self._respond("{0:02d}\r".format(self._load_levels.get(number, 0)))
+            command_length = 5
         elif command == "G":
             _LOGGER.warning("Instant status not supported")
             self._respond("000000000000000000000000000000000000000000000000\r")
+            command_length = 2
         elif command == "H":
             _LOGGER.warning("Instant status not supported")
             self._respond(
                 "00000000000000000000000000000000000000 0000000000000000000000000000000000000000000000000000000000\r"
             )
+            command_length = 2
         elif command == "I":
             self._set_switch(number, True)
+            command_length = 5
         elif command == "J":
             self._set_switch(number, False)
+            command_length = 5
         elif command == "K":
             self._respond("Switch #{}\r".format(number))
+            command_length = 5
         elif command == "L":
             self._respond("Load #{}\r".format(number))
+            command_length = 5
         elif command == "M":
             self._respond("Scene #{}\r".format(number))
-        return len(data)
+            command_length = 5
+        return command_length
 
     def _respond(self, str):
-        self._read_buffer = str.encode("utf-8")
+        _LOGGER.info(f"from MCP: {str}")
+        self._read_buffer += str.encode("utf-8")
         self._read_ready.set()

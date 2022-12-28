@@ -3,7 +3,7 @@ from setuptools import setup
 setup(
     name="pylitejet",
     packages=["pylitejet"],
-    version="0.3.0",
+    version="0.4.4",
     description="A library for controlling a LiteJet lighting system.",
     author="Jon Caruana",
     author_email="jon@joncaruana.com",
@@ -13,8 +13,8 @@ setup(
     classifiers=[
         "Development Status :: 3 - Alpha",
         "License :: OSI Approved :: MIT License",
-        "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.9",
     ],
     license="MIT",
-    install_requires=["pyserial"],
+    install_requires=["pyserial", "pyserial-asyncio"],
 )

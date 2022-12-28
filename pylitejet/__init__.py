@@ -2,47 +2,10 @@ import logging
 import serial
 import serial.threaded
 import threading
+import asyncio
+import serial_asyncio
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class LiteJetReader(serial.threaded.LineReader):
-    TERMINATOR = b"\r"
-
-    def __init__(self):
-        super(LiteJetReader, self).__init__()
-        self._recv_event = threading.Event()
-
-    def notify_event(self, event):
-        pass
-
-    def connection_made(self, transport):
-        super(LiteJetReader, self).connection_made(transport)
-
-    def connection_lost(self, exc):
-        pass
-
-    def handle_line(self, line):
-        _LOGGER.debug('Read "%s"', line)
-        if len(line) == 4 and (line[0] == "P" or line[0] == "R"):
-            self.notify_event(line)
-            return
-        if len(line) == 4 and (line[0] == "F" or line[0] == "N"):
-            self.notify_event(line)
-            return
-        if len(line) == 7 and line[0] == "^" and line[1] == "K":
-            _LOGGER.debug("Dim event: '" + line[2:5] + "' '" + line[5:7] + "'")
-            event_name = "F" if line[5:7] == "00" else "N"
-            self.notify_event(event_name + line[2:5])
-            return
-        self._lastline = line
-        self._recv_event.set()
-
-    def get_response(self):
-        self._recv_event.wait()
-        self._recv_event.clear()
-        return self._lastline
-
 
 class LiteJet:
     FIRST_LOAD = 1
@@ -128,32 +91,65 @@ class LiteJet:
         2700,
     ]
 
-    def __init__(self, url):
-        self._serial = serial.serial_for_url(
-            url, baudrate=19200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE
-        )
+    def __init__(self):
+        self._reader = None
+        self._writer = None
         self._events = {}
-        self._command_lock = threading.Lock()
-        self._thread = serial.threaded.ReaderThread(self._serial, LiteJetReader)
-        self._thread.start()
-        transport, self._protocol = self._thread.connect()
-        self._protocol.notify_event = self._notify_event
+        self._command_lock = asyncio.Lock()
+        self._recv_event = asyncio.Event()
+        self._recv_line = None
+        self._open = False
 
-    def close(self):
-        self._thread.close()
+    async def open(self, url):
+        self._reader, self._writer = await serial_asyncio.open_serial_connection(
+            url=url, baudrate=19200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE
+        )
+        self._open = True
+        self._reader_task = asyncio.create_task(self._reader_impl())
 
-    def _send(self, command):
+    async def _reader_impl(self):
+        while self._open:
+            line = await self._reader.readuntil(separator=b'\r')
+
+            line = line[0:-1].decode('utf-8')
+
+            _LOGGER.debug(f'Read "{line}" ({len(line)})')
+            if len(line) == 4 and (line[0] == "P" or line[0] == "R"):
+                self._notify_event(line)
+            elif len(line) == 4 and (line[0] == "F" or line[0] == "N"):
+                self._notify_event(line)
+            elif len(line) == 7 and line[0] == "^" and line[1] == "K":
+                _LOGGER.debug("Dim event: '" + line[2:5] + "' '" + line[5:7] + "'")
+                event_name = "F" if line[5:7] == "00" else "N"
+                self._notify_event(event_name + line[2:5])
+            else:
+                self._recv_line = line[0:-1]
+                self._recv_event.set()
+
+    async def close(self):
+        self._open = False
+        self._writer.close()
+        await self._writer.wait_closed()
+        self._reader_task.cancel()
+
+    async def _send(self, command):
         _LOGGER.debug('WantToSend "%s"', command)
-        with self._command_lock:
+        async with self._command_lock:
             _LOGGER.debug('Send "%s"', command)
-            self._protocol.write_line(command)
+            self._writer.write(bytes(f"{command}\n", 'utf-8'))
+            await self._writer.drain()
 
-    def _sendrecv(self, command):
+    async def _sendrecv(self, command):
         _LOGGER.debug('WantToSendRecv "%s"', command)
-        with self._command_lock:
+        async with self._command_lock:
+            self._recv_event.clear()
+
             _LOGGER.debug('SendRecv(S) "%s"', command)
-            self._protocol.write_line(command)
-            result = self._protocol.get_response()
+            self._writer.write(bytes(f"{command}\n", 'utf-8'))
+            await self._writer.drain()
+
+            await asyncio.wait_for(self._recv_event.wait(), timeout=1)
+            result = self._recv_line
             _LOGGER.debug('SendRecv(R) "%s"', result)
             return result
 
@@ -193,30 +189,30 @@ class LiteJet:
         return len(table) - 1
 
     def on_load_activated(self, index, handler):
-        self._add_event("N{0:03d}".format(index), handler)
+        self._add_event(f"N{index:03d}", handler)
 
     def on_load_deactivated(self, index, handler):
-        self._add_event("F{0:03d}".format(index), handler)
+        self._add_event(f"F{index:03d}", handler)
 
     def on_switch_pressed(self, index, handler):
-        self._add_event("P{0:03d}".format(index), handler)
+        self._add_event(f"P{index:03d}", handler)
 
     def on_switch_released(self, index, handler):
-        self._add_event("R{0:03d}".format(index), handler)
+        self._add_event(f"R{index:03d}", handler)
 
-    def activate_load(self, index):
-        self._send("^A{0:03d}".format(index))
+    async def activate_load(self, index):
+        await self._send(f"^A{index:03d}")
 
-    def deactivate_load(self, index):
-        self._send("^B{0:03d}".format(index))
+    async def deactivate_load(self, index):
+        await self._send(f"^B{index:03d}")
 
-    def activate_scene(self, index):
-        self._send("^C{0:03d}".format(index))
+    async def activate_scene(self, index):
+        await self._send(f"^C{index:03d}")
 
-    def deactivate_scene(self, index):
-        self._send("^D{0:03d}".format(index))
+    async def deactivate_scene(self, index):
+        await self._send(f"^D{index:03d}")
 
-    def activate_load_at(self, index, level, rate_seconds):
+    async def activate_load_at(self, index, level, rate_seconds):
         if index >= LiteJet.FIRST_LOAD_RELAY and index <= LiteJet.LAST_LOAD_RELAY:
             table = LiteJet.RELAY_RATE_SECONDS
         elif index >= LiteJet.FIRST_LOAD_LVRB and index <= LiteJet.LAST_LOAD_LVRB:
@@ -224,36 +220,36 @@ class LiteJet:
         else:
             table = LiteJet.FAN_RATE_SECONDS
         rate = self._seconds2rate(rate_seconds, table)
-        self._send("^E{0:03d}{1:02d}{2:02d}".format(index, level, rate))
+        await self._send(f"^E{index:03d}{level:02d}{rate:02d}")
 
-    def get_load_level(self, index):
-        return int(self._sendrecv("^F{0:03d}".format(index)))
+    async def get_load_level(self, index):
+        return int(await self._sendrecv(f"^F{index:03d}"))
 
     # ^G: Get instant on/off status of all loads on this board
     # ^H: Get instant on/off status of all switches on this board.
 
-    def get_all_load_states(self):
-        response = self._sendrecv("^G")
+    async def get_all_load_states(self):
+        response = await self._sendrecv("^G")
         return self._hex2bits(response, 0, 11, LiteJet.FIRST_LOAD)
 
-    def get_all_switch_states(self):
-        response = self._sendrecv("^H")
+    async def get_all_switch_states(self):
+        response = await self._sendrecv("^H")
         return self._hex2bits(response, 0, 39, LiteJet.FIRST_SWITCH)
 
-    def press_switch(self, index):
-        self._send("^I{0:03d}".format(index))
+    async def press_switch(self, index):
+        await self._send(f"^I{index:03d}")
 
-    def release_switch(self, index):
-        self._send("^J{0:03d}".format(index))
+    async def release_switch(self, index):
+        await self._send(f"^J{index:03d}")
 
-    def get_switch_name(self, index):
-        return self._sendrecv("^K{0:03d}".format(index)).strip()
+    async def get_switch_name(self, index):
+        return (await self._sendrecv(f"^K{index:03d}")).strip()
 
-    def get_load_name(self, index):
-        return self._sendrecv("^L{0:03d}".format(index)).strip()
+    async def get_load_name(self, index):
+        return (await self._sendrecv(f"^L{index:03d}")).strip()
 
-    def get_scene_name(self, index):
-        return self._sendrecv("^M{0:03d}".format(index)).strip()
+    async def get_scene_name(self, index):
+        return (await self._sendrecv(f"^M{index:03d}")).strip()
 
     def loads(self):
         return range(LiteJet.FIRST_LOAD, LiteJet.LAST_LOAD + 1)
@@ -266,3 +262,8 @@ class LiteJet:
 
     def scenes(self):
         return range(LiteJet.FIRST_SCENE, LiteJet.LAST_SCENE + 1)
+
+async def open(url):
+    lj = LiteJet()
+    await lj.open(url)
+    return lj
