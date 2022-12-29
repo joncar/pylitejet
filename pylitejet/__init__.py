@@ -1,11 +1,55 @@
 import logging
 import serial
-import serial.threaded
 import threading
 import asyncio
-import serial_asyncio
+import queue
 
 _LOGGER = logging.getLogger(__name__)
+
+class AsyncSerialAdapter:
+    def __init__(self, serial):
+        self._serial = serial
+        self._loop = asyncio.get_running_loop()
+
+        self._read_queue = queue.Queue()
+        self._read_queue_event = asyncio.Event()
+        self._write_queue = queue.Queue()
+        self._open = True
+
+        self._read_thread = threading.Thread(target=self._read_thread_impl, daemon=True)
+        self._write_thread = threading.Thread(target=self._write_thread_impl, daemon=True)
+
+        self._read_thread.start()
+        self._write_thread.start()
+
+    def _read_thread_impl(self):
+        while self._open:
+            line = self._serial.read_until(expected=b'\r')
+            self._loop.call_soon_threadsafe(self._add_read, line)
+
+    def _add_read(self, line: bytes):
+        self._read_queue.put(line)
+        self._read_queue_event.set()
+
+    def _write_thread_impl(self):
+        while self._open:
+            line = self._write_queue.get()
+            line = self._serial.write(line)
+
+    async def read(self) -> bytes:
+        while self._open:
+            await self._read_queue_event.wait()
+            if not self._read_queue.empty():
+                return self._read_queue.get_nowait()
+            else:
+                self._read_queue_event.clear()
+        raise Exception('Closed')
+
+    async def write(self, data: bytes):
+        self._write_queue.put(data)
+
+    def close(self):
+        pass
 
 class LiteJet:
     FIRST_LOAD = 1
@@ -91,19 +135,23 @@ class LiteJet:
         2700,
     ]
 
+    _serial: serial.Serial
+    _adapter: AsyncSerialAdapter
+    _reader_task: asyncio.Task
+    _start: str
+
     def __init__(self):
-        self._reader = None
-        self._writer = None
         self._events = {}
         self._command_lock = asyncio.Lock()
         self._recv_event = asyncio.Event()
         self._recv_line = None
         self._open = False
 
-    async def open(self, url):
-        self._reader, self._writer = await serial_asyncio.open_serial_connection(
-            url=url, baudrate=19200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE
+    async def open(self, url: str):
+        self._serial = serial.serial_for_url(
+            url, baudrate=19200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE
         )
+        self._adapter = AsyncSerialAdapter(self._serial)
         self._open = True
         self._reader_task = asyncio.create_task(self._reader_impl())
 
@@ -111,13 +159,13 @@ class LiteJet:
         self._start = '^'
         try:
             await self.get_all_load_states()
-        except:
+        except asyncio.exceptions.TimeoutError:
             self._start = '+'
         await self.get_all_load_states()
 
     async def _reader_impl(self):
         while self._open:
-            line = await self._reader.readuntil(separator=b'\r')
+            line = await self._adapter.read()
 
             line = line[0:-1].decode('utf-8')
 
@@ -136,25 +184,23 @@ class LiteJet:
 
     async def close(self):
         self._open = False
-        self._writer.close()
-        await self._writer.wait_closed()
+        self._adapter.close()
+        self._serial.close()
         self._reader_task.cancel()
 
-    async def _send(self, command):
+    async def _send(self, command: str):
         _LOGGER.debug('WantToSend "%s"', command)
         async with self._command_lock:
             _LOGGER.debug('Send "%s"', command)
-            self._writer.write(bytes(f"{command}\n", 'utf-8'))
-            await self._writer.drain()
+            await self._adapter.write(bytes(f"{command}\n", 'utf-8'))
 
-    async def _sendrecv(self, command):
+    async def _sendrecv(self, command: str):
         _LOGGER.debug('WantToSendRecv "%s"', command)
         async with self._command_lock:
             self._recv_event.clear()
 
             _LOGGER.debug('SendRecv(S) "%s"', command)
-            self._writer.write(bytes(f"{command}\n", 'utf-8'))
-            await self._writer.drain()
+            await self._adapter.write(bytes(f"{command}\n", 'utf-8'))
 
             await asyncio.wait_for(self._recv_event.wait(), timeout=1)
             result = self._recv_line
@@ -163,7 +209,7 @@ class LiteJet:
 
     def _add_event(self, event_name, handler):
         event_list = self._events.get(event_name, None)
-        if event_list == None:
+        if event_list is None:
             event_list = []
             self._events[event_name] = event_list
         event_list.append(handler)
