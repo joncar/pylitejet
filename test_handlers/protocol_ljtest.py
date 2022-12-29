@@ -64,13 +64,12 @@ class Serial(SerialBase):
 
         # Skip until a command start marker
         start_index = 0
-        while start_index < len(str) and str[start_index] != '^':
+        while start_index < len(str) and str[start_index] != '+':
             start_index += 1
         if start_index != 0:
             _LOGGER.info(f"Skipped {start_index} bytes")
             return start_index
 
-        assert str[0] == "^"
         command = str[1]
         if command != "G" and command != "H":
             number = int(str[2:5])

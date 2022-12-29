@@ -107,6 +107,14 @@ class LiteJet:
         self._open = True
         self._reader_task = asyncio.create_task(self._reader_impl())
 
+        # Auto detect which start symbol the MCP expects.
+        self._start = '^'
+        try:
+            await self.get_all_load_states()
+        except:
+            self._start = '+'
+        await self.get_all_load_states()
+
     async def _reader_impl(self):
         while self._open:
             line = await self._reader.readuntil(separator=b'\r')
@@ -201,16 +209,16 @@ class LiteJet:
         self._add_event(f"R{index:03d}", handler)
 
     async def activate_load(self, index):
-        await self._send(f"^A{index:03d}")
+        await self._send(f"{self._start}A{index:03d}")
 
     async def deactivate_load(self, index):
-        await self._send(f"^B{index:03d}")
+        await self._send(f"{self._start}B{index:03d}")
 
     async def activate_scene(self, index):
-        await self._send(f"^C{index:03d}")
+        await self._send(f"{self._start}C{index:03d}")
 
     async def deactivate_scene(self, index):
-        await self._send(f"^D{index:03d}")
+        await self._send(f"{self._start}D{index:03d}")
 
     async def activate_load_at(self, index, level, rate_seconds):
         if index >= LiteJet.FIRST_LOAD_RELAY and index <= LiteJet.LAST_LOAD_RELAY:
@@ -220,36 +228,36 @@ class LiteJet:
         else:
             table = LiteJet.FAN_RATE_SECONDS
         rate = self._seconds2rate(rate_seconds, table)
-        await self._send(f"^E{index:03d}{level:02d}{rate:02d}")
+        await self._send(f"{self._start}E{index:03d}{level:02d}{rate:02d}")
 
     async def get_load_level(self, index):
-        return int(await self._sendrecv(f"^F{index:03d}"))
+        return int(await self._sendrecv(f"{self._start}F{index:03d}"))
 
     # ^G: Get instant on/off status of all loads on this board
     # ^H: Get instant on/off status of all switches on this board.
 
     async def get_all_load_states(self):
-        response = await self._sendrecv("^G")
+        response = await self._sendrecv(f"{self._start}G")
         return self._hex2bits(response, 0, 11, LiteJet.FIRST_LOAD)
 
     async def get_all_switch_states(self):
-        response = await self._sendrecv("^H")
+        response = await self._sendrecv(f"{self._start}H")
         return self._hex2bits(response, 0, 39, LiteJet.FIRST_SWITCH)
 
     async def press_switch(self, index):
-        await self._send(f"^I{index:03d}")
+        await self._send(f"{self._start}I{index:03d}")
 
     async def release_switch(self, index):
-        await self._send(f"^J{index:03d}")
+        await self._send(f"{self._start}J{index:03d}")
 
     async def get_switch_name(self, index):
-        return (await self._sendrecv(f"^K{index:03d}")).strip()
+        return (await self._sendrecv(f"{self._start}K{index:03d}")).strip()
 
     async def get_load_name(self, index):
-        return (await self._sendrecv(f"^L{index:03d}")).strip()
+        return (await self._sendrecv(f"{self._start}L{index:03d}")).strip()
 
     async def get_scene_name(self, index):
-        return (await self._sendrecv(f"^M{index:03d}")).strip()
+        return (await self._sendrecv(f"{self._start}M{index:03d}")).strip()
 
     def loads(self):
         return range(LiteJet.FIRST_LOAD, LiteJet.LAST_LOAD + 1)
