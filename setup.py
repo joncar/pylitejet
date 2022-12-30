@@ -5,6 +5,7 @@ setup(
     packages=["pylitejet"],
     version="0.4.5",
     description="A library for controlling a LiteJet lighting system.",
+    long_description="A library for controlling a LiteJet lighting system.",
     author="Jon Caruana",
     author_email="jon@joncaruana.com",
     url="https://github.com/joncar/pylitejet",
