@@ -7,8 +7,8 @@ import queue
 _LOGGER = logging.getLogger(__name__)
 
 class AsyncSerialAdapter:
-    def __init__(self, serial):
-        self._serial = serial
+    def __init__(self, serial_instance: serial.Serial):
+        self._serial = serial_instance
         self._loop = asyncio.get_running_loop()
 
         self._read_queue = queue.Queue()
@@ -175,9 +175,10 @@ class LiteJet:
             elif len(line) == 4 and (line[0] == "F" or line[0] == "N"):
                 self._notify_event(line)
             elif len(line) == 7 and line[0] == "^" and line[1] == "K":
-                _LOGGER.debug("Dim event: '" + line[2:5] + "' '" + line[5:7] + "'")
-                event_name = "F" if line[5:7] == "00" else "N"
-                self._notify_event(event_name + line[2:5])
+                new_level = line[5:7]
+                _LOGGER.debug("Dim event: '" + line[2:5] + "' '" + new_level + "'")
+                event_name = "F" if new_level == "00" else "N"
+                self._notify_event(event_name + line[2:5], int(new_level))
             else:
                 self._recv_line = line[0:-1]
                 self._recv_event.set()
@@ -214,12 +215,12 @@ class LiteJet:
             self._events[event_name] = event_list
         event_list.append(handler)
 
-    def _notify_event(self, event_name):
+    def _notify_event(self, event_name, *args):
         _LOGGER.debug('Event "%s"', event_name)
         event_list = self._events.get(event_name, None)
         if event_list is not None:
             for handler in event_list:
-                handler()
+                handler(*args)
 
     def unsubscribe(self, handler):
         for event_name, event_list in self._events.items():
@@ -242,31 +243,31 @@ class LiteJet:
                 return candidate_rate
         return len(table) - 1
 
-    def on_load_activated(self, index, handler):
+    def on_load_activated(self, index: int, handler):
         self._add_event(f"N{index:03d}", handler)
 
-    def on_load_deactivated(self, index, handler):
+    def on_load_deactivated(self, index: int, handler):
         self._add_event(f"F{index:03d}", handler)
 
-    def on_switch_pressed(self, index, handler):
+    def on_switch_pressed(self, index: int, handler):
         self._add_event(f"P{index:03d}", handler)
 
-    def on_switch_released(self, index, handler):
+    def on_switch_released(self, index: int, handler):
         self._add_event(f"R{index:03d}", handler)
 
-    async def activate_load(self, index):
+    async def activate_load(self, index: int):
         await self._send(f"{self._start}A{index:03d}")
 
-    async def deactivate_load(self, index):
+    async def deactivate_load(self, index: int):
         await self._send(f"{self._start}B{index:03d}")
 
-    async def activate_scene(self, index):
+    async def activate_scene(self, index: int):
         await self._send(f"{self._start}C{index:03d}")
 
-    async def deactivate_scene(self, index):
+    async def deactivate_scene(self, index: int):
         await self._send(f"{self._start}D{index:03d}")
 
-    async def activate_load_at(self, index, level, rate_seconds):
+    async def activate_load_at(self, index: int, level: int, rate_seconds: int):
         if index >= LiteJet.FIRST_LOAD_RELAY and index <= LiteJet.LAST_LOAD_RELAY:
             table = LiteJet.RELAY_RATE_SECONDS
         elif index >= LiteJet.FIRST_LOAD_LVRB and index <= LiteJet.LAST_LOAD_LVRB:
@@ -276,7 +277,7 @@ class LiteJet:
         rate = self._seconds2rate(rate_seconds, table)
         await self._send(f"{self._start}E{index:03d}{level:02d}{rate:02d}")
 
-    async def get_load_level(self, index):
+    async def get_load_level(self, index: int) -> int:
         return int(await self._sendrecv(f"{self._start}F{index:03d}"))
 
     # ^G: Get instant on/off status of all loads on this board
@@ -290,19 +291,19 @@ class LiteJet:
         response = await self._sendrecv(f"{self._start}H")
         return self._hex2bits(response, 0, 39, LiteJet.FIRST_SWITCH)
 
-    async def press_switch(self, index):
+    async def press_switch(self, index: int):
         await self._send(f"{self._start}I{index:03d}")
 
-    async def release_switch(self, index):
+    async def release_switch(self, index: int):
         await self._send(f"{self._start}J{index:03d}")
 
-    async def get_switch_name(self, index):
+    async def get_switch_name(self, index: int):
         return (await self._sendrecv(f"{self._start}K{index:03d}")).strip()
 
-    async def get_load_name(self, index):
+    async def get_load_name(self, index: int):
         return (await self._sendrecv(f"{self._start}L{index:03d}")).strip()
 
-    async def get_scene_name(self, index):
+    async def get_scene_name(self, index: int):
         return (await self._sendrecv(f"{self._start}M{index:03d}")).strip()
 
     def loads(self):

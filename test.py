@@ -114,8 +114,8 @@ async def cmd_monitor(lj, args):
     def capture(func, name, number):
         return lambda: func(name, number)
 
-    def load_activated(name, number):
-        print("Load {} ({}) activated.".format(name, number))
+    def load_activated(name, number, level):
+        print("Load {} ({}) activated to {}%.".format(name, number, level or '??'))
 
     def load_deactivated(name, number):
         print("Load {} ({}) deactivated.".format(name, number))
@@ -127,11 +127,11 @@ async def cmd_monitor(lj, args):
         print("Switch {} ({}) released.".format(name, number))
 
     for number in lj.loads():
-        name = lj.get_load_name(number)
+        name = await lj.get_load_name(number)
         lj.on_load_activated(number, capture(load_activated, name, number))
         lj.on_load_deactivated(number, capture(load_deactivated, name, number))
     for number in lj.all_switches():
-        name = lj.get_switch_name(number)
+        name = await lj.get_switch_name(number)
         lj.on_switch_pressed(number, capture(switch_pressed, name, number))
         lj.on_switch_released(number, capture(switch_released, name, number))
     input("Press any key to stop monitoring...")
