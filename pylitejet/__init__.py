@@ -180,7 +180,7 @@ class LiteJet:
                 event_name = "F" if new_level == "00" else "N"
                 self._notify_event(event_name + line[2:5], int(new_level))
             else:
-                self._recv_line = line[0:-1]
+                self._recv_line = line
                 self._recv_event.set()
 
     async def close(self):
