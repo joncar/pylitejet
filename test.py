@@ -110,14 +110,14 @@ async def cmd_switch_release(lj, args):
 
 
 # Command: monitor
-async def cmd_monitor(lj, args):
+async def cmd_monitor(lj: pylitejet.LiteJet, args):
     def capture(func, name, number):
-        return lambda: func(name, number)
+        return lambda *args: func(name, number, *args)
 
     def load_activated(name, number, level):
         print("Load {} ({}) activated to {}%.".format(name, number, level or '??'))
 
-    def load_deactivated(name, number):
+    def load_deactivated(name, number, level):
         print("Load {} ({}) deactivated.".format(name, number))
 
     def switch_pressed(name, number):
@@ -134,7 +134,9 @@ async def cmd_monitor(lj, args):
         name = await lj.get_switch_name(number)
         lj.on_switch_pressed(number, capture(switch_pressed, name, number))
         lj.on_switch_released(number, capture(switch_released, name, number))
-    input("Press any key to stop monitoring...")
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, input, "Press any key to stop monitoring...")
 
 
 # Main
