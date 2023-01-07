@@ -79,7 +79,7 @@ class MockMCP:
             self.set_switch(number, False)
             command_length = 5
         elif command == "K":
-            response = "Switch #{number}\r"
+            response = f"Switch #{number}\r"
             command_length = 5
         elif command == "L":
             response = f"Load #{number}\r"

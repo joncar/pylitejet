@@ -16,7 +16,10 @@ async def handle_client(reader, writer):
     mcp.add_listener(handle_broadcast)
 
     while True:
-        request = await reader.readuntil(separator=b'\n')
+        try:
+            request = await reader.readuntil(separator=b'\n')
+        except asyncio.exceptions.IncompleteReadError:
+            break
         while len(request) > 0:
             length, response = mcp.handle_input(request)
             if response:
