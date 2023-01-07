@@ -32,7 +32,7 @@ async def cmd_list(lj, args):
             name = await lj.get_scene_name(number)
             print('Scene {} is named "{}"'.format(number, name))
     if args.buttons:
-        switch_states = lj.get_all_switch_states()
+        switch_states = await lj.get_all_switch_states()
         for number in lj.button_switches():
             if args.hide_off and not switch_states[number]:
                 continue
@@ -59,7 +59,7 @@ async def cmd_load(lj, args):
         level_string = "on"
     else:
         level_string = "at " + str(level) + "%"
-    print('Load {} is named "{}" and is {}'.format(args.number, name, level_string))
+    print(f'Load {args.number} is named "{name}" and is {level_string}')
 
 
 async def cmd_load_on(lj, args):
@@ -68,12 +68,12 @@ async def cmd_load_on(lj, args):
 
 
 async def cmd_load_off(lj, args):
-    lj.deactivate_load(args.number)
+    await lj.deactivate_load(args.number)
     await cmd_load(lj, args)
 
 
 async def cmd_load_set(lj, args):
-    lj.activate_load_at(args.number, args.level, args.rate)
+    await lj.activate_load_at(args.number, args.level, args.rate)
     await cmd_load(lj, args)
 
 
@@ -89,7 +89,7 @@ async def cmd_scene_on(lj, args):
 
 
 async def cmd_scene_off(lj, args):
-    lj.deactivate_scene(args.number)
+    await lj.deactivate_scene(args.number)
     await cmd_scene(lj, args)
 
 
