@@ -2,6 +2,7 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class MockMCP:
     def __init__(self):
         self._load_levels = {}
@@ -9,7 +10,7 @@ class MockMCP:
         self._broadcast_receivers = []
 
     def _broadcast(self, line: str):
-        b = line.encode('utf-8')
+        b = line.encode("utf-8")
         _LOGGER.info(f"bcst MCP: {b}")
         _LOGGER.info(self._broadcast_receivers)
         for r in self._broadcast_receivers:
@@ -38,7 +39,7 @@ class MockMCP:
 
         # Skip until a command start marker
         start_index = 0
-        while start_index < len(str) and str[start_index] != '+':
+        while start_index < len(str) and str[start_index] != "+":
             start_index += 1
         if start_index != 0:
             _LOGGER.debug(f"Skipped {start_index} bytes")
@@ -88,6 +89,6 @@ class MockMCP:
             response = f"Scene #{number}\r"
             command_length = 5
         if response:
-            response = response.encode('utf-8')
+            response = response.encode("utf-8")
             _LOGGER.info(f"from MCP: {response}")
         return command_length, response

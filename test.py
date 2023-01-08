@@ -115,7 +115,7 @@ async def cmd_monitor(lj: pylitejet.LiteJet, args):
         return lambda *args: func(name, number, *args)
 
     def load_activated(name, number, level):
-        print("Load {} ({}) activated to {}%.".format(name, number, level or '??'))
+        print("Load {} ({}) activated to {}%.".format(name, number, level or "??"))
 
     def load_deactivated(name, number, level):
         print("Load {} ({}) deactivated.".format(name, number))
@@ -140,6 +140,7 @@ async def cmd_monitor(lj: pylitejet.LiteJet, args):
 
 
 # Main
+
 
 async def main():
     parser = argparse.ArgumentParser("Control a LiteJet lighting system.")
@@ -166,11 +167,15 @@ async def main():
     parser_load = subparsers.add_parser("load", help="Change load level.")
     parser_load.add_argument("number", type=int)
     subparser_load = parser_load.add_subparsers()
-    parser_load_set = subparser_load.add_parser("set", help="Set load to a specific level.")
+    parser_load_set = subparser_load.add_parser(
+        "set", help="Set load to a specific level."
+    )
     parser_load_set.add_argument("level", type=int)
     parser_load_set.add_argument("rate", type=int, default=0)
     parser_load_set.set_defaults(func=cmd_load_set)
-    parser_load_on = subparser_load.add_parser("on", help="Set load to its default level.")
+    parser_load_on = subparser_load.add_parser(
+        "on", help="Set load to its default level."
+    )
     parser_load_on.set_defaults(func=cmd_load_on)
     parser_load_off = subparser_load.add_parser("off", help="Turn off a load.")
     parser_load_off.set_defaults(func=cmd_load_off)
@@ -198,7 +203,9 @@ async def main():
         "release", help="Simulate releasing a switch."
     )
     parser_switch_off.set_defaults(func=cmd_switch_release)
-    parser_switch_get = subparser_switch.add_parser("get", help="Get switch information.")
+    parser_switch_get = subparser_switch.add_parser(
+        "get", help="Get switch information."
+    )
     parser_switch_get.set_defaults(func=cmd_switch)
 
     parser_monitor = subparsers.add_parser(
@@ -218,5 +225,6 @@ async def main():
         await args.func(lj, args)
 
     await lj.close()
+
 
 asyncio.run(main())
