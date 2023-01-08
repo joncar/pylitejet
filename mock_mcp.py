@@ -12,7 +12,6 @@ class MockMCP:
     def _broadcast(self, line: str):
         b = line.encode("utf-8")
         _LOGGER.info(f"bcst MCP: {b}")
-        _LOGGER.info(self._broadcast_receivers)
         for r in self._broadcast_receivers:
             r(b)
 
