@@ -6,6 +6,7 @@ import queue
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class AsyncSerialAdapter:
     def __init__(self, url: str):
         self._url = url
@@ -21,7 +22,10 @@ class AsyncSerialAdapter:
             if serial_instance is None:
                 _LOGGER.info("Connecting to %s", self._url)
                 serial_instance = serial.serial_for_url(
-                    self._url, baudrate=19200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE
+                    self._url,
+                    baudrate=19200,
+                    parity=serial.PARITY_NONE,
+                    stopbits=serial.STOPBITS_ONE,
                 )
                 self._serial = serial_instance
                 _LOGGER.info("Connected to %s", self._url)
@@ -29,32 +33,42 @@ class AsyncSerialAdapter:
 
     async def read(self) -> bytes:
         return await self._loop.run_in_executor(None, self._read)
-    
+
     def _read(self) -> bytes:
         serial_instance = self._ensure_connection()
-        return self._serial.read_until(expected=b'\r')
+        try:
+            return self._serial.read_until(expected=b"\r")
+        except Exception as exc:
+            self._close(f"due to exception: {exc}")
+            raise
 
     async def write(self, data: bytes):
         await self._loop.run_in_executor(None, self._write, data)
-    
+
     def _write(self, data: bytes):
         serial_instance = self._ensure_connection()
-        serial_instance.write(data)
+        try:
+            serial_instance.write(data)
+        except Exception as exc:
+            self._close(f"due to exception: {exc}")
+            raise
 
     async def open(self):
         await self._loop.run_in_executor(None, self._open)
-    
+
     def _open(self):
         self._ensure_connection()
 
     async def close(self):
-        await self._loop.run_in_executor(None, self._close)
-    
-    def _close(self):
+        await self._loop.run_in_executor(None, self._close, "by request")
+
+    def _close(self, reason):
+        _LOGGER.info("Closing %s", reason)
         with self._thread_lock:
             if self._serial is not None:
                 self._serial.close()
                 self._serial = None
+
 
 class LiteJet:
     FIRST_LOAD = 1
@@ -159,11 +173,11 @@ class LiteJet:
         self._reader_task = asyncio.create_task(self._reader_impl())
 
         # Auto detect which start symbol the MCP expects.
-        self._start = '^'
+        self._start = "^"
         try:
             await self.get_all_load_states()
         except asyncio.exceptions.TimeoutError:
-            self._start = '+'
+            self._start = "+"
         await self.get_all_load_states()
 
     async def _reader_impl(self):
@@ -174,7 +188,7 @@ class LiteJet:
                 await asyncio.sleep(5)
                 continue
 
-            line = line[0:-1].decode('utf-8')
+            line = line[0:-1].decode("utf-8")
 
             _LOGGER.debug(f'Read "{line}" ({len(line)})')
             if len(line) == 4 and (line[0] == "P" or line[0] == "R"):
@@ -199,7 +213,7 @@ class LiteJet:
         _LOGGER.debug('WantToSend "%s"', command)
         async with self._command_lock:
             _LOGGER.debug('Send "%s"', command)
-            await self._adapter.write(bytes(f"{command}\n", 'utf-8'))
+            await self._adapter.write(bytes(f"{command}\n", "utf-8"))
 
     async def _sendrecv(self, command: str):
         _LOGGER.debug('WantToSendRecv "%s"', command)
@@ -207,7 +221,7 @@ class LiteJet:
             self._recv_event.clear()
 
             _LOGGER.debug('SendRecv(S) "%s"', command)
-            await self._adapter.write(bytes(f"{command}\n", 'utf-8'))
+            await self._adapter.write(bytes(f"{command}\n", "utf-8"))
 
             await asyncio.wait_for(self._recv_event.wait(), timeout=1)
             result = self._recv_line
@@ -323,6 +337,7 @@ class LiteJet:
 
     def scenes(self):
         return range(LiteJet.FIRST_SCENE, LiteJet.LAST_SCENE + 1)
+
 
 async def open(url):
     lj = LiteJet()
