@@ -7,11 +7,11 @@ import queue
 _LOGGER = logging.getLogger(__name__)
 
 
-class LiteJetException(Exception):
+class LiteJetError(Exception):
     pass
 
 
-class LiteJetTimeoutException(LiteJetException):
+class LiteJetTimeout(LiteJetError):
     pass
 
 
@@ -46,7 +46,7 @@ class AsyncSerialAdapter:
                         stopbits=serial.STOPBITS_ONE,
                     )
                 except serial.SerialException as exc:
-                    raise LiteJetException(str(exc)) from exc
+                    raise LiteJetError(str(exc)) from exc
 
                 self._serial = serial_instance
                 _LOGGER.debug("Connected to %s", self._url)
@@ -63,7 +63,7 @@ class AsyncSerialAdapter:
             return self._serial.read_until(expected=b"\r")
         except serial.SerialException as exc:
             self._close(f"due to exception: {exc}")
-            raise LiteJetException() from exc
+            raise LiteJetError() from exc
 
     async def write(self, data: bytes):
         await self._loop.run_in_executor(None, self._write, data)
@@ -74,7 +74,7 @@ class AsyncSerialAdapter:
             serial_instance.write(data)
         except serial.SerialException as exc:
             self._close(f"due to exception: {exc}")
-            raise LiteJetException() from exc
+            raise LiteJetError() from exc
 
     async def open(self):
         await self._loop.run_in_executor(None, self._open)
@@ -208,13 +208,13 @@ class LiteJet:
             self._start = "^"
             try:
                 await self.get_all_load_states()
-            except LiteJetTimeoutException:
+            except LiteJetTimeout:
                 _LOGGER.info("No response to '^'. Trying '+'...")
                 self._start = "+"
             try:
                 await self.get_all_load_states()
-            except LiteJetTimeoutException:
-                raise LiteJetException(
+            except LiteJetTimeout:
+                raise LiteJetError(
                     "No response to '+' or '^' command. No LiteJet MCP connected?"
                 )
 
@@ -272,7 +272,7 @@ class LiteJet:
             try:
                 await asyncio.wait_for(self._recv_event.wait(), timeout=1)
             except asyncio.exceptions.TimeoutError as exc:
-                raise LiteJetTimeoutException() from exc
+                raise LiteJetTimeout() from exc
 
             result = self._recv_line
             _LOGGER.debug('SendRecv(R) "%s"', result)

@@ -226,7 +226,7 @@ async def main():
 
     try:
         lj = await pylitejet.open(args.path)
-    except pylitejet.LiteJetException as exc:
+    except pylitejet.LiteJetError as exc:
         print(f"Cannot connect: {exc}")
         return
 
