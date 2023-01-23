@@ -7,6 +7,14 @@ import queue
 _LOGGER = logging.getLogger(__name__)
 
 
+class LiteJetException(Exception):
+    pass
+
+
+class LiteJetTimeoutException(LiteJetException):
+    pass
+
+
 class AsyncSerialAdapter:
     def __init__(self, url: str):
         self._url = url
@@ -15,26 +23,35 @@ class AsyncSerialAdapter:
         self._serial = None
         self.connected_changed = None
 
-    def _connected_changed(self):
-        asyncio.run_coroutine_threadsafe(self.connected_changed(), self._loop)
+    def _connected_changed(self, connected: bool, reason: str):
+        asyncio.run_coroutine_threadsafe(
+            self.connected_changed(connected, reason), self._loop
+        )
 
     def _ensure_connection(self):
         with self._thread_lock:
             serial_instance = self._serial
+
             if serial_instance is not None and not serial_instance.is_open:
                 serial_instance = self._serial = None
-                self._loop.call_soon_threadsafe(self._connected_changed)
+                self._loop.call_soon_threadsafe(self._connected_changed, False, None)
+
             if serial_instance is None:
-                _LOGGER.info("Connecting to %s", self._url)
-                serial_instance = serial.serial_for_url(
-                    self._url,
-                    baudrate=19200,
-                    parity=serial.PARITY_NONE,
-                    stopbits=serial.STOPBITS_ONE,
-                )
+                _LOGGER.debug("Connecting to %s", self._url)
+                try:
+                    serial_instance = serial.serial_for_url(
+                        self._url,
+                        baudrate=19200,
+                        parity=serial.PARITY_NONE,
+                        stopbits=serial.STOPBITS_ONE,
+                    )
+                except serial.SerialException as exc:
+                    raise LiteJetException(str(exc)) from exc
+
                 self._serial = serial_instance
-                _LOGGER.info("Connected to %s", self._url)
-                self._loop.call_soon_threadsafe(self._connected_changed)
+                _LOGGER.debug("Connected to %s", self._url)
+                self._loop.call_soon_threadsafe(self._connected_changed, True, None)
+
             return serial_instance
 
     async def read(self) -> bytes:
@@ -44,9 +61,9 @@ class AsyncSerialAdapter:
         serial_instance = self._ensure_connection()
         try:
             return self._serial.read_until(expected=b"\r")
-        except Exception as exc:
+        except serial.SerialException as exc:
             self._close(f"due to exception: {exc}")
-            raise
+            raise LiteJetException() from exc
 
     async def write(self, data: bytes):
         await self._loop.run_in_executor(None, self._write, data)
@@ -55,9 +72,9 @@ class AsyncSerialAdapter:
         serial_instance = self._ensure_connection()
         try:
             serial_instance.write(data)
-        except Exception as exc:
+        except serial.SerialException as exc:
             self._close(f"due to exception: {exc}")
-            raise
+            raise LiteJetException() from exc
 
     async def open(self):
         await self._loop.run_in_executor(None, self._open)
@@ -74,7 +91,7 @@ class AsyncSerialAdapter:
                 _LOGGER.info("Disconnecting %s", reason)
                 self._serial.close()
                 self._serial = None
-                self._loop.call_soon_threadsafe(self._connected_changed)
+                self._loop.call_soon_threadsafe(self._connected_changed, False, reason)
 
     @property
     def connected(self):
@@ -177,8 +194,7 @@ class LiteJet:
         self._recv_line = None
         self._reader_active = False
         self._open = False
-        self._responsive = False
-        self._connected_last_notify = False
+        self.connected = False
 
     async def open(self, url: str):
         self._adapter = AsyncSerialAdapter(url)
@@ -192,31 +208,21 @@ class LiteJet:
             self._start = "^"
             try:
                 await self.get_all_load_states()
-            except asyncio.exceptions.TimeoutError:
+            except LiteJetTimeoutException:
                 _LOGGER.info("No response to '^'. Trying '+'...")
                 self._start = "+"
             try:
                 await self.get_all_load_states()
-            except asyncio.exceptions.TimeoutError:
-                _LOGGER.error(
+            except LiteJetTimeoutException:
+                raise LiteJetException(
                     "No response to '+' or '^' command. No LiteJet MCP connected?"
                 )
-                raise
 
             self._open = True
-            self._responsive = True
-            await self._connected_changed()
+            await self._connected_changed(True, None)
         except:
             await self._adapter.close()
             raise
-
-    @property
-    def connected(self):
-        return (
-            self._adapter.connected  # serial is connected
-            and self._open  # LiteJet.close hasn't been called
-            and self._responsive  # MCP responded to command after last connection
-        )
 
     async def _reader_impl(self):
         while self._reader_active:
@@ -263,7 +269,10 @@ class LiteJet:
             await self._adapter.write(bytes(f"{command}\n", "utf-8"))
 
             _LOGGER.debug("SendRecv(W)")
-            await asyncio.wait_for(self._recv_event.wait(), timeout=1)
+            try:
+                await asyncio.wait_for(self._recv_event.wait(), timeout=1)
+            except asyncio.exceptions.TimeoutError as exc:
+                raise LiteJetTimeoutException() from exc
 
             result = self._recv_line
             _LOGGER.debug('SendRecv(R) "%s"', result)
@@ -304,19 +313,19 @@ class LiteJet:
                 return candidate_rate
         return len(table) - 1
 
-    async def _connected_changed(self):
-        if self._adapter.connected and self._open:
+    async def _connected_changed(self, connected: bool, reason: str):
+        if not self._open:
+            connected = False
+        if connected:
             try:
                 await self.get_all_load_states()
             except:
-                self._responsive = False
-                await self._adapter.close("due to non-responsive MCP")
-            else:
-                self._responsive = True
-        connected = self.connected
-        if connected != self._connected_last_notify:
-            self._connected_last_notify = connected
-            self._notify_event("CONN", connected)
+                connected = False
+                reason = "due to non-responsive MCP"
+                await self._adapter.close(reason)
+        if connected != self.connected:
+            self.connected = connected
+            self._notify_event("CONN", connected, reason)
 
     def on_connected_changed(self, handler):
         self._add_event("CONN", handler)

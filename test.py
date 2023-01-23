@@ -126,8 +126,8 @@ async def cmd_monitor(lj: pylitejet.LiteJet, args):
     def switch_released(name, number):
         print("Switch {} ({}) released.".format(name, number))
 
-    def connected_changed(connected):
-        print("Connected" if connected else "Disconnected")
+    def connected_changed(connected: bool, reason: str):
+        print("Connected" if connected else f"Disconnected {reason}")
 
     lj.on_connected_changed(connected_changed)
 
@@ -226,7 +226,7 @@ async def main():
 
     try:
         lj = await pylitejet.open(args.path)
-    except Exception as exc:
+    except pylitejet.LiteJetException as exc:
         print(f"Cannot connect: {exc}")
         return
 
