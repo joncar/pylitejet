@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pylitejet"
+authors = [
+    {name = "Jon Caruana", email = "jon@joncaruana.com"},
+]
+description = "A library for controlling a LiteJet lighting system."
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["litejet"]
+license = {text = "MIT License"}
+dependencies = [
+    "pyserial"
+]
+dynamic = ["version"]
+
+[project.urls]
+repository = "https://github.com/joncar/pylitejet.git"
+
+[tool.setuptools]
+packages = ["pylitejet"]
+
+[tool.setuptools_scm]
+write_to = "pylitejet/_version.py"
