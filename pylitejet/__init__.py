@@ -7,28 +7,51 @@ import queue
 _LOGGER = logging.getLogger(__name__)
 
 
+class LiteJetError(Exception):
+    pass
+
+
+class LiteJetTimeout(LiteJetError):
+    pass
+
+
 class AsyncSerialAdapter:
     def __init__(self, url: str):
         self._url = url
         self._loop = asyncio.get_running_loop()
         self._thread_lock = threading.Lock()
         self._serial = None
+        self.connected_changed = None
+
+    def _connected_changed(self, connected: bool, reason: str):
+        asyncio.run_coroutine_threadsafe(
+            self.connected_changed(connected, reason), self._loop
+        )
 
     def _ensure_connection(self):
         with self._thread_lock:
             serial_instance = self._serial
+
             if serial_instance is not None and not serial_instance.is_open:
                 serial_instance = self._serial = None
+                self._loop.call_soon_threadsafe(self._connected_changed, False, None)
+
             if serial_instance is None:
-                _LOGGER.info("Connecting to %s", self._url)
-                serial_instance = serial.serial_for_url(
-                    self._url,
-                    baudrate=19200,
-                    parity=serial.PARITY_NONE,
-                    stopbits=serial.STOPBITS_ONE,
-                )
+                _LOGGER.debug("Connecting to %s", self._url)
+                try:
+                    serial_instance = serial.serial_for_url(
+                        self._url,
+                        baudrate=19200,
+                        parity=serial.PARITY_NONE,
+                        stopbits=serial.STOPBITS_ONE,
+                    )
+                except serial.SerialException as exc:
+                    raise LiteJetError(str(exc)) from exc
+
                 self._serial = serial_instance
-                _LOGGER.info("Connected to %s", self._url)
+                _LOGGER.debug("Connected to %s", self._url)
+                self._loop.call_soon_threadsafe(self._connected_changed, True, None)
+
             return serial_instance
 
     async def read(self) -> bytes:
@@ -38,9 +61,9 @@ class AsyncSerialAdapter:
         serial_instance = self._ensure_connection()
         try:
             return self._serial.read_until(expected=b"\r")
-        except Exception as exc:
+        except serial.SerialException as exc:
             self._close(f"due to exception: {exc}")
-            raise
+            raise LiteJetError() from exc
 
     async def write(self, data: bytes):
         await self._loop.run_in_executor(None, self._write, data)
@@ -49,9 +72,9 @@ class AsyncSerialAdapter:
         serial_instance = self._ensure_connection()
         try:
             serial_instance.write(data)
-        except Exception as exc:
+        except serial.SerialException as exc:
             self._close(f"due to exception: {exc}")
-            raise
+            raise LiteJetError() from exc
 
     async def open(self):
         await self._loop.run_in_executor(None, self._open)
@@ -59,15 +82,20 @@ class AsyncSerialAdapter:
     def _open(self):
         self._ensure_connection()
 
-    async def close(self):
-        await self._loop.run_in_executor(None, self._close, "by request")
+    async def close(self, reason="by request"):
+        await self._loop.run_in_executor(None, self._close, reason)
 
     def _close(self, reason):
-        _LOGGER.info("Closing %s", reason)
         with self._thread_lock:
             if self._serial is not None:
+                _LOGGER.info("Disconnecting %s", reason)
                 self._serial.close()
                 self._serial = None
+                self._loop.call_soon_threadsafe(self._connected_changed, False, reason)
+
+    @property
+    def connected(self):
+        return self._serial is not None
 
 
 class LiteJet:
@@ -164,27 +192,43 @@ class LiteJet:
         self._command_lock = asyncio.Lock()
         self._recv_event = asyncio.Event()
         self._recv_line = None
+        self._reader_active = False
         self._open = False
+        self.connected = False
 
     async def open(self, url: str):
         self._adapter = AsyncSerialAdapter(url)
+        self._adapter.connected_changed = self._connected_changed
         await self._adapter.open()
-        self._open = True
-        self._reader_task = asyncio.create_task(self._reader_impl())
-
-        # Auto detect which start symbol the MCP expects.
-        self._start = "^"
         try:
-            await self.get_all_load_states()
-        except asyncio.exceptions.TimeoutError:
-            self._start = "+"
-        await self.get_all_load_states()
+            self._reader_active = True
+            self._reader_task = asyncio.create_task(self._reader_impl())
+
+            # Auto detect which start symbol the MCP expects.
+            self._start = "^"
+            try:
+                await self.get_all_load_states()
+            except LiteJetTimeout:
+                _LOGGER.info("No response to '^'. Trying '+'...")
+                self._start = "+"
+            try:
+                await self.get_all_load_states()
+            except LiteJetTimeout:
+                raise LiteJetError(
+                    "No response to '+' or '^' command. No LiteJet MCP connected?"
+                )
+
+            self._open = True
+            await self._connected_changed(True, None)
+        except:
+            await self._adapter.close()
+            raise
 
     async def _reader_impl(self):
-        while self._open:
+        while self._reader_active:
             try:
                 line = await self._adapter.read()
-            except Exception:
+            except:
                 await asyncio.sleep(5)
                 continue
 
@@ -206,6 +250,7 @@ class LiteJet:
 
     async def close(self):
         self._open = False
+        self._reader_active = False
         await self._adapter.close()
         self._reader_task.cancel()
 
@@ -223,7 +268,12 @@ class LiteJet:
             _LOGGER.debug('SendRecv(S) "%s"', command)
             await self._adapter.write(bytes(f"{command}\n", "utf-8"))
 
-            await asyncio.wait_for(self._recv_event.wait(), timeout=1)
+            _LOGGER.debug("SendRecv(W)")
+            try:
+                await asyncio.wait_for(self._recv_event.wait(), timeout=1)
+            except asyncio.exceptions.TimeoutError as exc:
+                raise LiteJetTimeout() from exc
+
             result = self._recv_line
             _LOGGER.debug('SendRecv(R) "%s"', result)
             return result
@@ -262,6 +312,23 @@ class LiteJet:
             if seconds <= candidate_seconds:
                 return candidate_rate
         return len(table) - 1
+
+    async def _connected_changed(self, connected: bool, reason: str):
+        if not self._open:
+            connected = False
+        if connected:
+            try:
+                await self.get_all_load_states()
+            except:
+                connected = False
+                reason = "due to non-responsive MCP"
+                await self._adapter.close(reason)
+        if connected != self.connected:
+            self.connected = connected
+            self._notify_event("CONN", connected, reason)
+
+    def on_connected_changed(self, handler):
+        self._add_event("CONN", handler)
 
     def on_load_activated(self, index: int, handler):
         self._add_event(f"N{index:03d}", handler)

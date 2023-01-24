@@ -126,6 +126,11 @@ async def cmd_monitor(lj: pylitejet.LiteJet, args):
     def switch_released(name, number):
         print("Switch {} ({}) released.".format(name, number))
 
+    def connected_changed(connected: bool, reason: str):
+        print("Connected" if connected else f"Disconnected {reason}")
+
+    lj.on_connected_changed(connected_changed)
+
     for number in lj.loads():
         name = await lj.get_load_name(number)
         lj.on_load_activated(number, capture(load_activated, name, number))
@@ -219,7 +224,11 @@ async def main():
 
     serial.protocol_handler_packages.append("test_handlers")
 
-    lj = await pylitejet.open(args.path)
+    try:
+        lj = await pylitejet.open(args.path)
+    except pylitejet.LiteJetError as exc:
+        print(f"Cannot connect: {exc}")
+        return
 
     if args.func is not None:
         await args.func(lj, args)
