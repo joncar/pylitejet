@@ -3,6 +3,8 @@ import serial
 import threading
 import asyncio
 import queue
+from typing import Optional, Dict
+from itertools import chain
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -195,6 +197,7 @@ class LiteJet:
         self._reader_active = False
         self._open = False
         self.connected = False
+        self.board_count = 1
 
     async def open(self, url: str):
         self._adapter = AsyncSerialAdapter(url)
@@ -217,6 +220,13 @@ class LiteJet:
                 raise LiteJetError(
                     "No response to '+' or '^' command. No LiteJet MCP connected?"
                 )
+
+            # Auto detect if this is a dual MCP.
+            try:
+                await self._sendrecv(f"{self._start}g")
+                self.board_count = 2
+            except LiteJetTimeout:
+                pass
 
             self._open = True
             await self._connected_changed(True, None)
@@ -296,8 +306,7 @@ class LiteJet:
         for event_name, event_list in self._events.items():
             event_list[:] = [x for x in event_list if x != handler]
 
-    def _hex2bits(self, response, input_first, input_last, output_first):
-        output = {}
+    def _hex2bits(self, response: str, input_first: int, input_last: int, output_first: int, output: Dict[int, bool]):
         output_number = output_first
         for digit in range(input_first, input_last, 2):
             digit_value = int(response[digit : digit + 2], 16)
@@ -342,17 +351,27 @@ class LiteJet:
     def on_switch_released(self, index: int, handler):
         self._add_event(f"R{index:03d}", handler)
 
+    def _command(self, command: str, index: Optional[int] = None, last_index: Optional[int] = None):
+        # If index exceeds this MCP's range, send it to the other MCP.
+        if index is not None and index > last_index:
+            command = command.lower()
+            index -= last_index
+
+        if index is None:
+            return f"{self._start}{command}"
+        return f"{self._start}{command}{index:03d}"
+
     async def activate_load(self, index: int):
-        await self._send(f"{self._start}A{index:03d}")
+        await self._send(self._command("A", index, LiteJet.LAST_LOAD))
 
     async def deactivate_load(self, index: int):
-        await self._send(f"{self._start}B{index:03d}")
+        await self._send(self._command("B", index, LiteJet.LAST_LOAD))
 
     async def activate_scene(self, index: int):
-        await self._send(f"{self._start}C{index:03d}")
+        await self._send(self._command("C", index, LiteJet.LAST_SCENE))
 
     async def deactivate_scene(self, index: int):
-        await self._send(f"{self._start}D{index:03d}")
+        await self._send(self._command("D", index, LiteJet.LAST_SCENE))
 
     async def activate_load_at(self, index: int, level: int, rate_seconds: int):
         if index >= LiteJet.FIRST_LOAD_RELAY and index <= LiteJet.LAST_LOAD_RELAY:
@@ -362,48 +381,62 @@ class LiteJet:
         else:
             table = LiteJet.FAN_RATE_SECONDS
         rate = self._seconds2rate(rate_seconds, table)
-        await self._send(f"{self._start}E{index:03d}{level:02d}{rate:02d}")
+        command = self._command("E", index, LiteJet.LAST_LOAD)
+        await self._send(f"{command}{level:02d}{rate:02d}")
 
     async def get_load_level(self, index: int) -> int:
-        return int(await self._sendrecv(f"{self._start}F{index:03d}"))
+        return int(await self._sendrecv(self._command("F", index, LiteJet.LAST_LOAD)))
 
     # ^G: Get instant on/off status of all loads on this board
     # ^H: Get instant on/off status of all switches on this board.
 
     async def get_all_load_states(self):
-        response = await self._sendrecv(f"{self._start}G")
-        return self._hex2bits(response, 0, 11, LiteJet.FIRST_LOAD)
+        bits = {}
+        response = await self._sendrecv(self._command("G"))
+        self._hex2bits(response, 0, 11, LiteJet.FIRST_LOAD, bits)
+        if self.board_count > 1:
+            response = await self._sendrecv(self._command("g"))
+            self._hex2bits(response, 0, 11, LiteJet.LAST_LOAD + 1, bits)
+        return bits
 
     async def get_all_switch_states(self):
-        response = await self._sendrecv(f"{self._start}H")
-        return self._hex2bits(response, 0, 39, LiteJet.FIRST_SWITCH)
+        bits = {}
+        response = await self._sendrecv(self._command("H"))
+        self._hex2bits(response, 0, 39, LiteJet.FIRST_SWITCH, bits)
+        if self.board_count > 1:
+            response = await self._sendrecv(self._command("h"))
+            self._hex2bits(response, 0, 39, LiteJet.LAST_SWITCH + 1, bits)
+        return bits
 
     async def press_switch(self, index: int):
-        await self._send(f"{self._start}I{index:03d}")
+        await self._send(self._command("I", index, LiteJet.LAST_SWITCH))
 
     async def release_switch(self, index: int):
-        await self._send(f"{self._start}J{index:03d}")
+        await self._send(self._command("J", index, LiteJet.LAST_SWITCH))
 
     async def get_switch_name(self, index: int):
-        return (await self._sendrecv(f"{self._start}K{index:03d}")).strip()
+        return (await self._sendrecv(self._command("K", index, LiteJet.LAST_SWITCH))).strip()
 
     async def get_load_name(self, index: int):
-        return (await self._sendrecv(f"{self._start}L{index:03d}")).strip()
+        return (await self._sendrecv(self._command("L", index, LiteJet.LAST_LOAD))).strip()
 
     async def get_scene_name(self, index: int):
-        return (await self._sendrecv(f"{self._start}M{index:03d}")).strip()
+        return (await self._sendrecv(self._command("M", index, LiteJet.LAST_SCENE))).strip()
 
     def loads(self):
-        return range(LiteJet.FIRST_LOAD, LiteJet.LAST_LOAD + 1)
+        return range(LiteJet.FIRST_LOAD, LiteJet.LAST_LOAD * self.board_count + 1)
 
     def button_switches(self):
-        return range(LiteJet.FIRST_SWITCH, LiteJet.LAST_BUTTON_SWITCH + 1)
+        result = range(LiteJet.FIRST_SWITCH, LiteJet.LAST_BUTTON_SWITCH + 1)
+        if self.board_count > 1:
+            result = chain(result, range(LiteJet.LAST_SWITCH + 1, LiteJet.LAST_SWITCH + LiteJet.LAST_BUTTON_SWITCH + 1))
+        return result
 
     def all_switches(self):
-        return range(LiteJet.FIRST_SWITCH, LiteJet.LAST_SWITCH + 1)
+        return range(LiteJet.FIRST_SWITCH, LiteJet.LAST_SWITCH * self.board_count + 1)
 
     def scenes(self):
-        return range(LiteJet.FIRST_SCENE, LiteJet.LAST_SCENE + 1)
+        return range(LiteJet.FIRST_SCENE, LiteJet.LAST_SCENE * self.board_count + 1)
 
 
 async def open(url):

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from mock_mcp import MockMCP
+from mock_mcp import MockMCP, MockSystem
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +42,6 @@ async def run_server():
 
 logging.basicConfig(level=logging.DEBUG)
 
-mcp = MockMCP()
+mcp = MockMCP(MockSystem.LITEJET_DUAL)
 
 asyncio.run(run_server())
