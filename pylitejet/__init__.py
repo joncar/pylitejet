@@ -5,9 +5,21 @@ import asyncio
 import queue
 from typing import Optional, Dict
 from itertools import chain
+from enum import Enum
 
 _LOGGER = logging.getLogger(__name__)
 
+class Model(Enum):
+    UNKNOWN = 0
+    LITEJET = 1
+    LITEJET_48 = 2
+
+    def __str__(self):
+        if self is Model.LITEJET:
+            return "LiteJet"
+        if self is Model.LITEJET_48:
+            return "LiteJet 48"
+        return self.name
 
 class LiteJetError(Exception):
     pass
@@ -198,6 +210,11 @@ class LiteJet:
         self._open = False
         self.connected = False
         self.board_count = 1
+        self.model = Model.UNKNOWN
+
+    @property
+    def model_name(self):
+        return str(self.model)
 
     async def open(self, url: str):
         self._adapter = AsyncSerialAdapter(url)
@@ -224,9 +241,10 @@ class LiteJet:
             # Auto detect if this is a dual MCP.
             try:
                 await self._sendrecv(f"{self._start}g")
+                self.model = Model.LITEJET_48
                 self.board_count = 2
             except LiteJetTimeout:
-                pass
+                self.model = Model.LITEJET
 
             self._open = True
             await self._connected_changed(True, None)

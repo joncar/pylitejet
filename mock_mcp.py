@@ -5,7 +5,7 @@ _LOGGER = logging.getLogger(__name__)
 
 class MockSystem(Enum):
     LITEJET = 1
-    LITEJET_DUAL = 2
+    LITEJET_48 = 2
 
 class MockMCP:
     def __init__(self, system: MockSystem = MockSystem.LITEJET):
@@ -16,7 +16,7 @@ class MockMCP:
         self._other = None
         self._prefix = ""
 
-        if system == MockSystem.LITEJET_DUAL:
+        if system == MockSystem.LITEJET_48:
             self._prefix = "Alpha "
             self._other = MockMCP(MockSystem.LITEJET)
             self._other._prefix = "Bravo "

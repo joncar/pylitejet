@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import argparse
 from mock_mcp import MockMCP, MockSystem
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +43,14 @@ async def run_server():
 
 logging.basicConfig(level=logging.DEBUG)
 
-mcp = MockMCP(MockSystem.LITEJET_DUAL)
+parser = argparse.ArgumentParser("Emulate a LiteJet lighting system.")
+parser.add_argument(
+    "--litejet48",
+    help="Emulate a LiteJet 48 (two LiteJet boards)",
+    action="store_true"
+)
+args = parser.parse_args()
+
+mcp = MockMCP(MockSystem.LITEJET_48 if args.litejet48 else MockSystem.LITEJET)
 
 asyncio.run(run_server())

@@ -11,6 +11,14 @@ async def cmd_none(args):
     print("Nothing to do. See -h.")
 
 
+# Command: info
+async def cmd_info(lj, args):
+    print(f"Model: {lj.model_name}")
+    print(f"Board Count: {lj.board_count}")
+    print(f"Load Count: {sum(1 for _ in lj.loads())}")
+    print(f"Button Count: {sum(1 for _ in lj.button_switches())}")
+    print(f"Scene Count: {sum(1 for _ in lj.scenes())}")
+
 # Command: list
 async def cmd_list(lj, args):
     if args.loads:
@@ -160,6 +168,9 @@ async def main():
         default=logging.WARN,
     )
     subparsers = parser.add_subparsers()
+
+    parser_info = subparsers.add_parser("info", help="Information about the board.")
+    parser_info.set_defaults(func=cmd_info)
 
     parser_list = subparsers.add_parser("list", help="List available items.")
     parser_list.add_argument("-l", "--loads", action="store_true")
