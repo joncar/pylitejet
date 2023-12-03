@@ -454,7 +454,7 @@ class LiteJet:
         return range(LiteJet.FIRST_SWITCH, LiteJet.LAST_SWITCH * self.board_count + 1)
 
     def scenes(self):
-        return range(LiteJet.FIRST_SCENE, LiteJet.LAST_SCENE * self.board_count + 1)
+        return range(LiteJet.FIRST_SCENE, LiteJet.LAST_SCENE + 1)
 
 
 async def open(url):
