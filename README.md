@@ -3,8 +3,8 @@ This project provides a pure Python3 library for interfacing with the LiteJet li
 ## Setup
 1. You will need the LiteJet programming software from the [Dragon Technologies](https://www.dragontechinc.com/) Programming page.
 2. Your LiteJet MCP should be configured for 19.2 K baud.
-   a. For firmware versions 5.00 and higher, this setting is configured using the programming software.
-   b. For firmware versions 4.90 and lower, this setting is configured by setting DIP Switch 4 to OFF. Press the RESET button after changing this.
+   1. For firmware versions 5.00 and higher, this setting is configured using the LiteJet software's Settings screen.
+   2. For firmware versions 4.90 and lower, this setting is configured by setting DIP Switch 4 to OFF. Press the RESET button after changing this.
 2. In the LiteJet software's Settings screen configure it to send "Third Party Carriage Return".
 3. In the LiteJet software's Lights screen configure each load to announce changes. This is the "Load RS232" checkbox on each load's middle panel.
 4. Connect the LiteJet's RS232-2 port to your computer.
@@ -13,13 +13,13 @@ If you have LiteJet 48 then the RS232-2 port is used to connect the two boards t
 
 ## Test
 
-1. List all buttons and loads: `python3 ./test.py --path */dev/serial0* list -l -b`
-2. Monitor button presses and load changes: `python3 ./test.py --path */dev/serial0* list -l -b`
+1. List all buttons and loads: `python3 ./test.py --path /dev/serial0 list -l -b`
+2. Monitor button presses and load changes: `python3 ./test.py --path /dev/serial0 list -l -b`
 3. Control a load: `python3 ./test.py --path */dev/serial0* load 1 on`
 
 ## Sample
 
-```
+```python
 import asyncio
 import pylitejet
 
