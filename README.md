@@ -14,8 +14,8 @@ If you have LiteJet 48 then the RS232-2 port is used to connect the two boards t
 ## Test
 
 1. List all buttons and loads: `python3 ./test.py --path /dev/serial0 list -l -b`
-2. Monitor button presses and load changes: `python3 ./test.py --path /dev/serial0 list -l -b`
-3. Control a load: `python3 ./test.py --path */dev/serial0* load 1 on`
+2. Monitor button presses and load changes: `python3 ./test.py --path /dev/serial0 monitor`
+3. Control a load: `python3 ./test.py --path /dev/serial0 load 1 on`
 
 ## Sample
 
