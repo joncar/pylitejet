@@ -126,6 +126,7 @@ class LiteJet:
     FIRST_SWITCH = 1
     LAST_BUTTON_SWITCH = 96
     LAST_SWITCH = 138
+    KEYPAD_COUNT = 16
     RELAY_RATE_SECONDS = [
         0,
         1,
@@ -456,6 +457,23 @@ class LiteJet:
     def scenes(self):
         return range(LiteJet.FIRST_SCENE, LiteJet.LAST_SCENE + 1)
 
+    def get_switch_keypad_number(self, index: int):
+        for board in range(0, self.board_count):
+            if index < LiteJet.FIRST_SWITCH:
+                return None
+            if index <= LiteJet.LAST_BUTTON_SWITCH:
+                # Keypad #1 has switches 1-6, #2 has 7-12, ...
+                return (board * LiteJet.KEYPAD_COUNT) + (int((index - 1) / 6) + 1)
+            if index <= LiteJet.LAST_SWITCH:
+                # Touch Panel Programmer
+                return 0
+            index -= LiteJet.LAST_SWITCH
+
+    def get_switch_keypad_name(self, index: int):
+        keypad_number = self.get_switch_keypad_number(index)
+        if keypad_number == 0:
+            return "Touch Panel Programmer"
+        return f"Keypad #{keypad_number}"
 
 async def open(url):
     lj = LiteJet()

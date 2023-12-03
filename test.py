@@ -46,7 +46,8 @@ async def cmd_list(lj, args):
                 continue
             name = await lj.get_switch_name(number)
             is_pressed = " and is pressed" if switch_states[number] else ""
-            print('Switch {} is named "{}"{}'.format(number, name, is_pressed))
+            keypad_name = lj.get_switch_keypad_name(number)
+            print('Switch {} is named "{}" ({}){}'.format(number, name, keypad_name, is_pressed))
     if args.all_switches:
         switch_states = await lj.get_all_switch_states()
         for number in lj.all_switches():
@@ -54,7 +55,8 @@ async def cmd_list(lj, args):
                 continue
             name = await lj.get_switch_name(number)
             is_pressed = " and is pressed" if switch_states[number] else ""
-            print('(All) Switch {} is named "{}"{}'.format(number, name, is_pressed))
+            keypad_name = lj.get_switch_keypad_name(number)
+            print('(All) Switch {} is named "{}" ({}){}'.format(number, name, keypad_name, is_pressed))
 
 
 # Command: load
