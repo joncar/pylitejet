@@ -77,8 +77,9 @@ class MockMCP:
         command = str[1]
         response = None
         mcp = self
-        if command.islower() and self._other:
-            mcp = self._other
+        if command.islower():
+            if self._other:
+                mcp = self._other
             command = command.upper()
         if command in "ABCDEFIJKLM":
             number = int(str[2:5])

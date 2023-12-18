@@ -240,11 +240,22 @@ class LiteJet:
                 )
 
             # Auto detect if this is a dual MCP.
+            is_dual = False
             try:
                 await self._sendrecv(f"{self._start}g")
+
+                # A single MCP can respond as both the "other" and "this"
+                # board so also check the first load's names are different.
+                my_name = await self._sendrecv(f"{self._start}L001")
+                other_name = await self._sendrecv(f"{self._start}l001")
+                is_dual = my_name != other_name
+            except LiteJetTimeout:
+                pass
+
+            if is_dual:
                 self.model = Model.LITEJET_48
                 self.board_count = 2
-            except LiteJetTimeout:
+            else:
                 self.model = Model.LITEJET
 
             self._open = True

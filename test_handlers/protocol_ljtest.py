@@ -12,7 +12,7 @@ class Serial(SerialBase):
         self._read_ready = threading.Event()
         self._read_ready.clear()
         self._mcp = MockMCP()
-        self._mcp.add_listner(self._broadcast)
+        self._mcp.add_listener(self._respond)
         self.is_open = True
 
     def close(self):
