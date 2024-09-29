@@ -47,10 +47,15 @@ parser = argparse.ArgumentParser("Emulate a LiteJet lighting system.")
 parser.add_argument(
     "--litejet48",
     help="Emulate a LiteJet 48 (two LiteJet boards)",
-    action="store_true"
+    action="store_const", dest="system", const=MockSystem.LITEJET_48
+)
+parser.add_argument(
+    "--oldlitejet",
+    help="Emulate an old LiteJet (sends load on/off event only)",
+    action="store_const", dest="system", const=MockSystem.LITEJET_OLD
 )
 args = parser.parse_args()
 
-mcp = MockMCP(MockSystem.LITEJET_48 if args.litejet48 else MockSystem.LITEJET)
+mcp = MockMCP(args.system or MockSystem.LITEJET)
 
 asyncio.run(run_server())

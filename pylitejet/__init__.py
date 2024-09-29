@@ -268,25 +268,32 @@ class LiteJet:
         while self._reader_active:
             try:
                 line = await self._adapter.read()
-            except:
+            except Exception as exc:
+                _LOGGER.debug(f"Read error: {exc}")
                 await asyncio.sleep(5)
                 continue
 
-            line = line[0:-1].decode("utf-8")
+            try:
+                line = line[0:-1].decode("utf-8")
 
-            _LOGGER.debug(f'Read "{line}" ({len(line)})')
-            if len(line) == 4 and (line[0] == "P" or line[0] == "R"):
-                self._notify_event(line)
-            elif len(line) == 4 and (line[0] == "F" or line[0] == "N"):
-                self._notify_event(line)
-            elif len(line) == 7 and line[0] == "^" and line[1] == "K":
-                new_level = line[5:7]
-                _LOGGER.debug("Dim event: '" + line[2:5] + "' '" + new_level + "'")
-                event_name = "F" if new_level == "00" else "N"
-                self._notify_event(event_name + line[2:5], int(new_level))
-            else:
-                self._recv_line = line
-                self._recv_event.set()
+                _LOGGER.debug(f'Read "{line}" ({len(line)})')
+                if len(line) == 4 and (line[0] == "P" or line[0] == "R"):
+                    # Switch press/release event
+                    self._notify_event(line)
+                elif len(line) == 4 and (line[0] == "F" or line[0] == "N"):
+                    # Load on/off event
+                    self._notify_event(line, None)
+                elif len(line) == 7 and line[0] == "^" and line[1] == "K":
+                    # Dimming event
+                    new_level = line[5:7]
+                    event_name = "F" if new_level == "00" else "N"
+                    self._notify_event(event_name + line[2:5], int(new_level))
+                else:
+                    # Possible command response
+                    self._recv_line = line
+                    self._recv_event.set()
+            except Exception as exc:
+                _LOGGER.error(f"While handling '{line}': {exc}")
 
     async def close(self):
         self._open = False

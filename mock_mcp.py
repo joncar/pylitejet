@@ -1,14 +1,29 @@
 import logging
-from enum import Enum
+from enum import Flag, auto
 
 _LOGGER = logging.getLogger(__name__)
 
-class MockSystem(Enum):
-    LITEJET = 1
-    LITEJET_48 = 2
+class MockSystem(Flag):
+    # Models (choose one)
+    MODEL_LITEJET = auto()
+
+    # Quirks (choose zero or more)
+    QUIRK_DUAL = auto()
+    QUIRK_OLD_LOAD_EVENT = auto()
+
+    # Standard combinations
+    LITEJET = MODEL_LITEJET
+    LITEJET_48 = MODEL_LITEJET | QUIRK_DUAL
+    LITEJET_OLD = MODEL_LITEJET | QUIRK_OLD_LOAD_EVENT
+
+    def is_dual(self):
+        return MockSystem.QUIRK_DUAL in self
+    def old_load_event(self):
+        return MockSystem.QUIRK_OLD_LOAD_EVENT in self
 
 class MockMCP:
     def __init__(self, system: MockSystem = MockSystem.LITEJET):
+        _LOGGER.info(f"System: {system}")
         self._system = system
         self._load_levels = {}
         self._switch_pressed = {}
@@ -16,9 +31,9 @@ class MockMCP:
         self._other = None
         self._prefix = ""
 
-        if system == MockSystem.LITEJET_48:
+        if system.is_dual():
             self._prefix = "Alpha "
-            self._other = MockMCP(MockSystem.LITEJET)
+            self._other = MockMCP(system & ~MockSystem.QUIRK_DUAL)
             self._other._prefix = "Bravo "
             self._other._other = self
 
@@ -37,8 +52,13 @@ class MockMCP:
 
     def set_load(self, number: int, level: int):
         self._load_levels[number] = level
-        self._broadcast(f"^K{number:03d}{level:02d}\r")
-        self._broadcast_other(f"^K{number+40:03d}{level:02d}\r")
+        if self._system.old_load_event():
+            event = "F" if level == 0 else "N"
+            self._broadcast(f"{event}{number:03d}\r")
+            self._broadcast_other(f"{event}{number+40:03d}\r")
+        else:
+            self._broadcast(f"^K{number:03d}{level:02d}\r")
+            self._broadcast_other(f"^K{number+40:03d}{level:02d}\r")
 
     def set_switch(self, number: int, pressed: bool):
         if self._switch_pressed.get(number, False) == pressed:
